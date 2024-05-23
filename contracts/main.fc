@@ -1,0 +1,107 @@
+#include "imports/stdlib.fc";
+
+const const::min_tons_for_storage = 10000000; ;; 0.01 TON
+
+const op::increment = 1;
+const op::deposit = 2;
+const op::withdraw = 3;
+const op::destroy = 4;
+const op::set_owner = 5;
+const op::set_lp_address = 6;
+const op::set_usdt_address = 7;
+
+(slice, int, slice) load_data() inline {
+    slice ds = get_data().begin_parse();
+    return (
+        ds~load_msg_addr(), ;; recent sender
+        ds~load_uint(32),   ;; sum
+        ds~load_msg_addr()  ;; owner
+    );
+}
+
+() save_data(slice sender_address, int total_sum, slice owner) impure inline {
+    set_data(
+        begin_cell()
+            .store_slice(sender_address)
+            .store_uint(total_sum, 32)
+            .store_slice(owner)
+            .end_cell()
+    );
+}
+
+() recv_internal(int my_balance, int msg_value, cell in_msg_full, slice in_msg_body) impure {
+    slice cs = in_msg_full.begin_parse();
+    int flags = cs~load_uint(4);
+    slice sender_address = cs~load_msg_addr();
+    
+    int op = in_msg_body~load_uint(32);
+    
+    if (op == op::increment) {
+        int increment_by = in_msg_body~load_uint(32);
+        var (stored_sender, total_sum, owner) = load_data();
+        
+        save_data(
+            sender_address,
+            total_sum + increment_by,
+            owner
+        );
+
+        return();
+    }
+
+    if (op == op::deposit) {
+        return();
+    }
+
+    if (op == op::withdraw) {
+        var (stored_sender, total_sum, owner) = load_data();
+        throw_unless(103, equal_slice_bits(sender_address, owner));
+        
+        int withdrawal_amount = in_msg_body~load_coins();
+        var [balance, _] = get_balance();
+        throw_unless(104, (balance - const::min_tons_for_storage) >= withdrawal_amount);
+
+        int return_value = min(withdrawal_amount, balance - const::min_tons_for_storage);
+
+        ;; Send internal message
+
+        var msg_mode = 1; ;; ordinary message with separate fees
+        var o_msg = begin_cell()
+            .store_uint(0x18, 6)
+            .store_slice(sender_address)
+            .store_coins(return_value)
+            .store_uint(0, 1 + 4 + 4 + 64 + 32 + 1 + 1);
+
+        send_raw_message(o_msg.end_cell(), msg_mode);
+
+        return();
+    }
+
+    if (op == op::destroy) {
+        var (stored_sender, total_sum, owner) = load_data();
+        throw_unless(103, equal_slice_bits(sender_address, owner));
+
+        var msg_mode = 128 + 32; ;; Current account must be destroyed if its resulting balance is zero (often used with Mode 128)
+        var o_msg = begin_cell()
+            .store_uint(0x18, 6)
+            .store_slice(owner)
+            .store_coins(0)
+            .store_uint(0, 1 + 4 + 4 + 64 + 32 + 1 + 1);
+        
+        send_raw_message(o_msg.end_cell(), msg_mode);
+        
+        return();
+    }
+
+    throw(199);
+}
+
+(slice, int, slice) get_contract_data() method_id {
+    var (sender_address, total_sum, owner) = load_data();
+    return (sender_address, total_sum, owner);
+}
+
+int balance() method_id { 
+    var [balance, _] = get_balance();
+    return balance;
+}
