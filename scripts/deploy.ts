@@ -1,8 +1,8 @@
-import { Address, Cell, StateInit, address, beginCell, contractAddress, storeStateInit, toNano } from "@ton/core";
-import { compile, NetworkProvider, sleep } from "@ton/blueprint";
+import { address, toNano } from "@ton/core";
+import { compile, NetworkProvider } from "@ton/blueprint";
 
 import dotenv from "dotenv";
-import { MainContract } from "../../ton-hello-world-frontend/src/contracts/MainContract";
+import { MainContract } from "../wrappers/MainContract";
 dotenv.config();
 
 export async function run(provider: NetworkProvider) {
